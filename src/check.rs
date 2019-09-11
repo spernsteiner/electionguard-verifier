@@ -1,7 +1,7 @@
 use num::BigUint;
 use num::traits::{Zero, One, Pow};
 
-use crate::crypto::group::{self, Element, Coefficient, generator};
+use crate::crypto::group::{self, Element, Exponent, Coefficient, generator};
 use crate::crypto::elgamal::Message;
 use crate::schema::*;
 use crate::crypto::hash::{hash_uee, hash_umc, hash_umcc};
@@ -166,12 +166,9 @@ fn check_decrypted_value(errs: &mut ErrorContext, r: &Record, dv: &DecryptedValu
                     compute_lagrange_coefficient(&sr.fragments, j),
                     "Lagrange coefficient was computed incorrectly");
 
-                if let Some(_tpk) = errs.check_get(&r.trustee_public_keys, i) {
-                    // TODO: Replace with the proper public key corresponding to Pil.
-                    let K_recovery = Element::one();
-                    // TODO: this check is expected to fail until the above TODO is fixed
+                if let Some(tpk) = errs.check_get(&r.trustee_public_keys, i) {
                     errs.check(f.proof.check_exp(
-                        &K_recovery,
+                        &compute_recovery_public_key(&tpk.coefficients, &f.trustee_index),
                         &dv.encrypted_value.public_key,
                         &f.fragment,
                         |msg, comm| hash_umc(&r.extended_base_hash, msg, comm),
@@ -257,6 +254,22 @@ pub fn compute_share_product(
     let mut product = Element::one();
     for s in shares {
         product = &product * &s.share;
+    }
+    product
+}
+
+pub fn compute_recovery_public_key(
+    // The coefficients of the trustee whose decryption share is being recovered.
+    coefficients: &[TrusteeCoefficient],
+    // The index `l` of the trustee that is computing the current fragment of the recovery.
+    recovery_trustee_index: &BigUint,
+) -> Element {
+    // The recovery public key, corresponding to the secret share Pi(l), is computed as the product
+    // of K_ij^(l^j) for j in 0..k-1.  K_ij is coefficients[j].public_key.
+    let mut product = Element::one();
+    for (j, c) in coefficients.iter().enumerate() {
+        let exponent = Exponent::new(recovery_trustee_index.pow(j));
+        product = &product * &c.public_key.pow(&exponent);
     }
     product
 }

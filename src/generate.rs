@@ -4,7 +4,7 @@ use num::traits::{Zero, One, Pow};
 use rand::Rng;
 use serde::{Serialize, Deserialize};
 
-use crate::crypto::group::{Element, Exponent, Coefficient, generator, prime_minus_one};
+use crate::crypto::group::{Element, Exponent, Coefficient, generator, prime_minus_one, subgroup_prime};
 use crate::crypto::elgamal::Message;
 use crate::crypto::schnorr;
 use crate::crypto::chaum_pedersen;
@@ -102,6 +102,8 @@ pub fn generate(rng: &mut impl Rng, e: Election) -> schema::Record {
         &extended_base_hash,
         &cast_ballots,
     );
+
+    compare_decrypted_tallies(&contest_tallies, &e.cast_ballots);
 
     let spoiled_ballots = spoiled_cast_ballots.into_iter().map(|b| generate_spoiled_ballot(
         rng,
@@ -303,6 +305,7 @@ pub fn generate_contest_tallies(
                 extended_base_hash,
                 tally,
             );
+
             selections.push(schema::SelectionTally {
                 value,
             });
@@ -313,6 +316,22 @@ pub fn generate_contest_tallies(
     }
 
     contests
+}
+
+/// Check that the "selection_tally.value.cleartext` results match the actual sums obtained from
+/// the unencrypted ballots.
+pub fn compare_decrypted_tallies(
+    contest_tallies: &[schema::ContestTally],
+    unencrypted_cast_ballots: &[Ballot],
+) {
+    for (i, contest) in contest_tallies.iter().enumerate() {
+        for (j, selection) in contest.selections.iter().enumerate() {
+            let unencrypted_tally: BigUint = unencrypted_cast_ballots.iter()
+                .map(|b| BigUint::from(b.contests[i].selections[j] as u8))
+                .sum();
+            assert_eq!(unencrypted_tally, selection.value.cleartext);
+        }
+    }
 }
 
 pub fn generate_spoiled_ballot(
@@ -393,8 +412,10 @@ pub fn generate_decrypted_value(
                 let Pil = trustees.secrets[j].shares[i].to_exponent();
                 let Mil = A.pow(&Pil);
 
-                // TODO: Replace with the proper public key corresponding to Pil.
-                let K_recovery = Element::one();
+                let K_recovery = check::compute_recovery_public_key(
+                    &trustees.public_keys[i].coefficients,
+                    &l,
+                );
 
                 let proof = chaum_pedersen::Proof::prove_exp(
                     &K_recovery,
@@ -469,10 +490,10 @@ pub fn random_element(rng: &mut impl Rng) -> Element {
 }
 
 pub fn random_exponent(rng: &mut impl Rng) -> Exponent {
-    let p1 = prime_minus_one();
+    let q = subgroup_prime();
     loop {
-        let x = rng.sample(RandomBits::new(p1.bits()));
-        if &x < p1 {
+        let x = rng.sample(RandomBits::new(q.bits()));
+        if &x < q {
             return Exponent::new(x);
         }
     }

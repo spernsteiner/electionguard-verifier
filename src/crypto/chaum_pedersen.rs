@@ -520,33 +520,6 @@ mod test {
         assert!(status.is_ok());
     }
 
-    /// This is `prove_check_zero`, but using the largest possible nonce for the message encryption.
-    /// This lets us check that we have the right modulus (p vs. p - 1) in certain places.
-    #[test]
-    fn prove_check_zero_extreme_nonce() {
-        let public_key = elgamal::test::public_key();
-        let extended_base_hash = elgamal::test::extended_base_hash();
-
-        let one_time_secret = (prime() - 2_u32).into();
-        let message = Message::encrypt(&public_key, &0_u32.into(), &one_time_secret);
-        let one_time_exponent = 3048_u32.into();
-        let proof = Proof::prove_zero(
-            &public_key,
-            &message,
-            &one_time_secret,
-            &one_time_exponent,
-            |msg, comm| hash_umc(&extended_base_hash, msg, comm),
-        );
-
-        let status = proof.check_zero(
-            &public_key,
-            &message,
-            |msg, comm| hash_umc(&extended_base_hash, msg, comm),
-        );
-        dbg!(&status);
-        assert!(status.is_ok());
-    }
-
     /// Encrypt the same value twice, construct a Chaum-Pedersen proof that they're equal, and check
     /// the proof.
     #[test]
@@ -595,40 +568,6 @@ mod test {
         let value2 = 2471_u32.into();
         let one_time_secret2 = 7494_u32.into();
         let message2 = Message::encrypt(&public_key, &value2, &one_time_secret2);
-        let one_time_exponent = 9195_u32.into();
-
-        let proof = Proof::prove_equal(
-            &public_key,
-            &message1,
-            &one_time_secret1,
-            &message2,
-            &one_time_secret2,
-            &one_time_exponent,
-            |msg, comm| hash_umc(&extended_base_hash, msg, comm),
-        );
-
-        let status = proof.check_equal(
-            &public_key,
-            &message1,
-            &message2,
-            |msg, comm| hash_umc(&extended_base_hash, msg, comm),
-        );
-        dbg!(&status);
-        assert!(status.is_ok());
-    }
-
-    /// This is `prove_check_equal`, but using the largest possible nonce for one of the encryptions.
-    /// This lets us check that we have the right modulus (p vs. p - 1) in certain places.
-    #[test]
-    fn prove_check_equal_extreme_nonce() {
-        let public_key = elgamal::test::public_key();
-        let extended_base_hash = elgamal::test::extended_base_hash();
-
-        let value = 30712_u32.into();
-        let one_time_secret1 = 7494_u32.into();
-        let message1 = Message::encrypt(&public_key, &value, &one_time_secret1);
-        let one_time_secret2 = (prime() - 2_u32).into();
-        let message2 = Message::encrypt(&public_key, &value, &one_time_secret2);
         let one_time_exponent = 9195_u32.into();
 
         let proof = Proof::prove_equal(
@@ -713,36 +652,6 @@ mod test {
         assert!(status.is_ok());
     }
 
-    /// This is `prove_check_plaintext`, but using the largest possible nonce for the message
-    /// encryption.  This lets us check that we have the right modulus (p vs. p - 1) in certain places.
-    #[test]
-    fn prove_check_plaintext_extreme_nonce() {
-        let public_key = elgamal::test::public_key();
-        let extended_base_hash = elgamal::test::extended_base_hash();
-
-        let value = 11935_u32.into();
-        let one_time_secret = (prime() - 2_u32).into();
-        let message = Message::encrypt(&public_key, &value, &one_time_secret);
-        let one_time_exponent = 30612_u32.into();
-        let proof = Proof::prove_plaintext(
-            &public_key,
-            &message,
-            &one_time_secret,
-            &value,
-            &one_time_exponent,
-            |msg, comm| hash_umc(&extended_base_hash, msg, comm),
-        );
-
-        let status = proof.check_plaintext(
-            &public_key,
-            &message,
-            &value,
-            |msg, comm| hash_umc(&extended_base_hash, msg, comm),
-        );
-        dbg!(&status);
-        assert!(status.is_ok());
-    }
-
 
     /// Generate a key pair, raise a value to the secret key, construct a Chaum-Pedersen proof the
     /// exponentiation was done correctly, and check the proof.
@@ -753,7 +662,8 @@ mod test {
         let secret_key = 22757_u32.into();
         let public_key = generator().pow(&secret_key);
 
-        let base: Element = 1033_u32.into();
+        // `Element`s must be powers of `g`, not just arbitrary values < p.
+        let base = generator().pow(&BigUint::from(1033_u32));
         let result = base.pow(&secret_key);
         let one_time_exponent = 26480_u32.into();
         let proof = Proof::prove_exp(
